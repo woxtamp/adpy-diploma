@@ -46,12 +46,23 @@ class VkFindUser(Base):
     vk_id = sq.Column(sq.Integer)
     vk_search_id = sq.Column(sq.Integer)
 
+
+class VkUserToken(Base):
+    __tablename__ = 'vk_user_token'
+
+    id = sq.Column(sq.Integer, primary_key=True)
+    vk_id = sq.Column(sq.Integer)
+    vk_user_token = sq.Column(sq.String)
+    vk_token_lifetime = sq.Column(sq.Integer)
+
+
 def add_user_to_db(vk_id, age, sex, city_name, city_id):
     if session.query(VkUserDb).filter_by(vk_id=vk_id).first() is not None:
         session.query(VkUserDb).filter_by(vk_id=vk_id).update(
             {'age': age, 'sex': sex, 'city_name': city_name, 'city_id': city_id}
         )
         session.commit()
+        session.close()
     else:
         vk_user = VkUserDb(vk_id=vk_id, age=age, sex=sex, city_name=city_name, city_id=city_id)
         session.add(vk_user)
@@ -72,6 +83,7 @@ def add_search_params_to_db(vk_id, age_from, age_to, sex, city_name, city_id):
             {'age_from': age_from, 'age_to': age_to, 'sex': sex, 'city_name': city_name, 'city_id': city_id}
         )
         session.commit()
+        session.close()
     else:
         vk_search_params = VkSearchParams(vk_id=vk_id, age_from=age_from, age_to=age_to, sex=sex,
                                           city_name=city_name, city_id=city_id)
@@ -95,3 +107,36 @@ def check_exist_find_user(vk_id, vk_search_id):
         return True
     else:
         return False
+
+
+def check_exist_vk_token(vk_id):
+    if session.query(VkUserToken).filter_by(vk_id=vk_id).first() is None:
+        return True
+    else:
+        return False
+
+
+def add_vk_user_token_to_db(vk_id, vk_user_token, vk_token_lifetime):
+    if session.query(VkUserToken).filter_by(vk_id=vk_id).first() is not None:
+        session.query(VkUserToken).filter_by(vk_id=vk_id).update(
+            {'vk_user_token': vk_user_token, 'vk_token_lifetime': vk_token_lifetime}
+        )
+        session.commit()
+        session.close()
+    else:
+        vk_search_params = VkUserToken(vk_id=vk_id, vk_user_token=vk_user_token, vk_token_lifetime=vk_token_lifetime)
+        session.add(vk_search_params)
+        session.commit()
+        session.close()
+
+
+def get_user_token_from_db(vk_id):
+    vk_search_params = session.query(VkUserToken.vk_user_token).filter_by(vk_id=vk_id).first()
+    for item in vk_search_params:
+        return item
+
+
+def get_token_lifetime_from_db(vk_id):
+    vk_search_params = session.query(VkUserToken.vk_token_lifetime).filter_by(vk_id=vk_id).first()
+    for item in vk_search_params:
+        return item

@@ -1,14 +1,9 @@
-import os
 import vk_api
-from dotenv import load_dotenv
 
 
 class VkUserApi:
-    def __init__(self):
-        dotenv_path = os.path.join('.env')
-        if os.path.exists(dotenv_path):
-            load_dotenv(dotenv_path)
-        token = os.getenv('VK_USER_TOKEN')
+    def __init__(self, token):
+        token = token
         self.vk = vk_api.VkApi(token=token)
 
     def get_city_by_name(self, city_name):
@@ -17,7 +12,7 @@ class VkUserApi:
         return city_id
 
     def get_users(self, city_type, city, sex, age_from, age_to, offset):
-        user_response = self.vk.method('users.search', {'sort': 0, 'count': 1, f'{city_type}': city, 'sex': sex,
+        user_response = self.vk.method('users.search', {'sort': 1, 'count': 1, f'{city_type}': city, 'sex': sex,
                                                         'status': 6, 'age_from': age_from, 'age_to': age_to,
                                                         'has_photo': 1, 'fields': 'screen_name', 'offset': offset})
         return user_response

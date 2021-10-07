@@ -1,12 +1,15 @@
+import os
 import time
+import re
 import vk_api
 from random import randrange
+from dotenv import load_dotenv
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
-import db_worker as vk_db_user
 from vk_group_api import VkGroupApi
 from vk_user_api import VkUserApi
 from datetime import datetime
+import db_worker as vk_db_user
 
 
 class VkBotApi:
@@ -14,7 +17,7 @@ class VkBotApi:
         self.vk = vk_api.VkApi(token=token)
         self.longpoll = VkLongPoll(self.vk)
         self.group = VkGroupApi(token)
-        self.user = VkUserApi()
+        self.user = VkUserApi(token)
         self.vk_db_user = vk_db_user
 
     def write_msg(self, user_id, message, keyboard=None, attachment=None):
@@ -45,17 +48,63 @@ class VkBotApi:
                     for btn, btn_color in zip(buttons_sex, button_sex_colors):
                         keyboard_sex.add_button(btn, btn_color)
 
+                    users_offset = 0
+
                     while True:
                         if request == 'vkinder':
+                            users_offset += 1
                             values_dict = {}
                             photos_dict = {}
                             photos_dict_sorted = {}
-                            users_offset = 1
+
                             opened_user_id = 0
                             opened_user_name = ''
-                            fields_values = self.group.get_user_data(event.user_id)
 
+                            fields_values = self.group.get_user_data(event.user_id)
                             values_dict['vk_id'] = event.user_id
+
+                            if not self.vk_db_user.check_exist_vk_token(values_dict['vk_id']) and int(
+                                    datetime.now().timestamp()) < int(self.vk_db_user.get_token_lifetime_from_db(
+                                    values_dict['vk_id'])):
+                                self.user.__init__(self.vk_db_user.get_user_token_from_db(values_dict['vk_id']))
+
+                            else:
+                                dotenv_path = os.path.join('.env')
+                                if os.path.exists(dotenv_path):
+                                    load_dotenv(dotenv_path)
+                                get_user_token_url = os.getenv('USER_TOKEN_URL')
+                                self.write_msg(event.user_id, 'Привет! Я бот для поиска твоей идеальной второй '
+                                                              f'половинки\n{self.group.get_username(event.user_id)}, '
+                                                              'для моей работы нужно перейти по ссылке:\n'
+                                                              f'{get_user_token_url}\n'
+                                                              'Затем нужно разрешить доступ к аккаунту и отправить '
+                                                              'мне ссылку из браузера в течение 30 секунд')
+                                last_message = self.group.get_message_id()
+
+                                time.sleep(30)
+
+                                try:
+                                    self.group.get_message_by_id(last_message + 1)
+                                    user_token_url = self.group.get_message()
+                                    pattern = r'(access_token=)(\w*)(&expires_in)'
+                                    try:
+                                        token_lifetime = int(datetime.now().timestamp()) + 86400
+                                        user_token = (re.search(pattern, user_token_url, re.M | re.I)).group(2)
+                                        self.vk_db_user.add_vk_user_token_to_db(values_dict['vk_id'], user_token,
+                                                                                token_lifetime)
+                                        self.user.__init__(self.vk_db_user.get_user_token_from_db(values_dict['vk_id']))
+                                        break
+
+                                    except AttributeError:
+                                        self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, к '
+                                                                      'сожалению ты отправил неправильную ссылку.\n'
+                                                                      'Пожалуйста, попробуй заново', keyboard_main)
+                                        break
+
+                                except IndexError:
+                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
+                                                   keyboard_main)
+                                    break
 
                             if fields_values[0] == '':
                                 self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, в течение 30 '
@@ -76,7 +125,8 @@ class VkBotApi:
                                     else:
                                         values_dict['age'] = int(self.group.get_message())
                                 except IndexError:
-                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.')
+                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
+                                                   keyboard_main)
                                     break
                             else:
                                 year_now = datetime.now().year
@@ -104,10 +154,11 @@ class VkBotApi:
                                         values_dict['sex'] = 2
                                     else:
                                         self.write_msg(event.user_id, 'Я же сказал, выбери кнопкой, а не пиши сам!\n'
-                                                                      'Теперь придётся начать заново :(')
+                                                                      'Теперь придётся начать заново :(', keyboard_main)
                                         break
                                 except IndexError:
-                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.')
+                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
+                                                   keyboard_main)
                                     break
                             else:
                                 values_dict['sex'] = int((eval(fields_values[1])))
@@ -128,17 +179,18 @@ class VkBotApi:
                                     except KeyError:
                                         self.write_msg(event.user_id, 'Сожалею, но такого города нет :(\nПопробуй '
                                                                       'указать его в своём профиле VK и напиши мне ещё '
-                                                                      'раз')
+                                                                      'раз', keyboard_main)
 
                                 except IndexError:
-                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.')
+                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
+                                                   keyboard_main)
                                     break
                             else:
                                 values_dict['city_name'] = str((eval(fields_values[2])['title']))
                                 values_dict['city_id'] = int((eval(fields_values[2])['id']))
 
                             self.write_msg(event.user_id, 'Пожалуйста, подожди! Подбираем тебе пару!\n'
-                                                          'К сожалению меня писал не очень опытный программист, '
+                                                          'К сожалению, меня писал не очень опытный программист, '
                                                           'поэтому ожидание может быть долгим :(')
 
                             self.vk_db_user.add_user_to_db(values_dict['vk_id'], values_dict['age'],
@@ -164,6 +216,11 @@ class VkBotApi:
 
                             vk_user = self.user.get_users(city_type, city, sex_search, values_dict['age'] - 2,
                                                           values_dict['age'] + 2, users_offset)
+
+                            if not vk_user["items"]:
+                                users_offset += 1
+                                break
+
                             for item in vk_user["items"]:
                                 is_closed_next = True
                                 is_closed_next_repeat = False
@@ -188,8 +245,9 @@ class VkBotApi:
                                                     opened_user_name = item_next['first_name']
                                                     is_closed_next = False
 
-                                    self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, твоя '
-                                                                  f'вторая половинка - {opened_user_name}:\n'
+                                    self.write_msg(event.user_id, f'Эй, {self.group.get_username(event.user_id)}, '
+                                                                  f'смотри, неплохой кандидат на роль твоей '
+                                                                  f'второй половинки - {opened_user_name}:\n'
                                                                   f'https://vk.com/{opened_user_screen_name}',
                                                    keyboard_main)
                                     self.vk_db_user.add_find_user_to_db(values_dict['vk_id'],
@@ -214,13 +272,13 @@ class VkBotApi:
                                                     opened_user_name = item_next['first_name']
                                                     is_closed_next_repeat = True
                                     else:
-                                        self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, твоя '
-                                                                      f'вторая половинка - {opened_user_name}:\n'
+                                        self.write_msg(event.user_id, f'Эй, {self.group.get_username(event.user_id)}, '
+                                                                      'смотри, неплохой кандидат на роль твоей '
+                                                                      f'второй половинки - {opened_user_name}:\n'
                                                                       f'https://vk.com/{opened_user_screen_name}',
                                                        keyboard_main)
                                         self.vk_db_user.add_find_user_to_db(values_dict['vk_id'],
                                                                             opened_user_id)
-
                             vk_photos = self.user.get_photos(opened_user_id)
 
                             for item in vk_photos['items']:
@@ -231,6 +289,9 @@ class VkBotApi:
 
                             for item in photo_ids:
                                 self.write_msg(event.user_id, '', keyboard_main, f'photo{opened_user_id}_{item}')
+
+                            self.write_msg(event.user_id, 'Для продолжения поиска нажми кнопку "vkinder" ещё раз',
+                                           keyboard_main)
 
                             break
 
@@ -243,6 +304,5 @@ class VkBotApi:
                                            keyboard_main)
                             break
                         else:
-                            self.write_msg(event.user_id, 'Я очень глупый бот и умею только искать пары.\n'
-                                                          'Нажми на кнопку "vkinder" чтобы начать.', keyboard_main)
+                            self.write_msg(event.user_id, 'Пожалуйста, нажми на кнопку "vkinder".', keyboard_main)
                             break
