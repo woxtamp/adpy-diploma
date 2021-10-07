@@ -88,7 +88,7 @@ class VkBotApi:
                                     user_token_url = self.group.get_message()
                                     pattern = r'(access_token=)(\w*)(&expires_in)'
                                     try:
-                                        token_lifetime = int(datetime.now().timestamp()) + 86400
+                                        token_lifetime = int(datetime.now().timestamp()) + 86370
                                         user_token = (re.search(pattern, user_token_url, re.M | re.I)).group(2)
                                         self.vk_db_user.add_vk_user_token_to_db(values_dict['vk_id'], user_token,
                                                                                 token_lifetime)
