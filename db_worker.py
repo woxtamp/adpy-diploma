@@ -71,10 +71,7 @@ def add_user_to_db(vk_id, age, sex, city_name, city_id):
 
 
 def check_exist_city_id(vk_id):
-    if session.query(VkSearchParams).filter_by(vk_id=vk_id, city_id=None).first() is None:
-        return True
-    else:
-        return False
+    return bool(session.query(VkSearchParams).filter_by(vk_id=vk_id, city_id=None).first())
 
 
 def add_search_params_to_db(vk_id, age_from, age_to, sex, city_name, city_id):
@@ -93,9 +90,7 @@ def add_search_params_to_db(vk_id, age_from, age_to, sex, city_name, city_id):
 
 
 def add_find_user_to_db(vk_id, vk_search_id):
-    if session.query(VkFindUser).filter_by(vk_id=vk_id, vk_search_id=vk_search_id).first() is not None:
-        pass
-    else:
+    if session.query(VkFindUser).filter_by(vk_id=vk_id, vk_search_id=vk_search_id).first() is None:
         vk_search_params = VkFindUser(vk_id=vk_id, vk_search_id=vk_search_id)
         session.add(vk_search_params)
         session.commit()
@@ -103,17 +98,11 @@ def add_find_user_to_db(vk_id, vk_search_id):
 
 
 def check_exist_find_user(vk_id, vk_search_id):
-    if session.query(VkFindUser).filter_by(vk_id=vk_id, vk_search_id=vk_search_id).first() is None:
-        return True
-    else:
-        return False
+    return bool(session.query(VkFindUser).filter_by(vk_id=vk_id, vk_search_id=vk_search_id).first())
 
 
 def check_exist_vk_token(vk_id):
-    if session.query(VkUserToken).filter_by(vk_id=vk_id).first() is None:
-        return True
-    else:
-        return False
+    return bool(session.query(VkUserToken).filter_by(vk_id=vk_id).first())
 
 
 def add_vk_user_token_to_db(vk_id, vk_user_token, vk_token_lifetime):

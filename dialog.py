@@ -12,7 +12,7 @@ from datetime import datetime
 import db_worker as vk_db_user
 
 
-class VkBotApi:
+class Dialog:
     def __init__(self, token):
         self.vk = vk_api.VkApi(token=token)
         self.longpoll = VkLongPoll(self.vk)
@@ -29,6 +29,103 @@ class VkBotApi:
             post['keyboard'] = VkKeyboard().get_empty_keyboard()
 
         self.vk.method('messages.send', post)
+
+    def get_token(self, values_dict, event, keyboard_main):
+        if self.vk_db_user.check_exist_vk_token(values_dict['vk_id']) and int(
+                datetime.now().timestamp()) < int(self.vk_db_user.get_token_lifetime_from_db(
+                values_dict['vk_id'])):
+            self.user = VkUserApi(self.vk_db_user.get_user_token_from_db(values_dict['vk_id']))
+        else:
+            dotenv_path = os.path.join('.env')
+            if os.path.exists(dotenv_path):
+                load_dotenv(dotenv_path)
+            get_user_token_url = os.getenv('USER_TOKEN_URL')
+            self.write_msg(event.user_id, 'Привет! Я бот для поиска твоей идеальной второй '
+                                          f'половинки\n{self.group.get_username(event.user_id)}, '
+                                          'для моей работы нужно перейти по ссылке:\n'
+                                          f'{get_user_token_url}\n'
+                                          'Затем нужно разрешить доступ к аккаунту и отправить '
+                                          'мне ссылку из браузера в течение 30 секунд')
+            last_message = self.group.get_message_id()
+
+            time.sleep(30)
+
+            try:
+                self.group.get_message_by_id(last_message + 1)
+                user_token_url = self.group.get_message()
+                pattern = r'(access_token=)(\w*)(&expires_in)'
+                try:
+                    token_lifetime = int(datetime.now().timestamp()) + 86370
+                    user_token = (re.search(pattern, user_token_url, re.M | re.I)).group(2)
+                    self.vk_db_user.add_vk_user_token_to_db(values_dict['vk_id'], user_token,
+                                                            token_lifetime)
+                    self.user = VkUserApi(
+                        self.vk_db_user.get_user_token_from_db(values_dict['vk_id']))
+
+                except AttributeError:
+                    self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, к '
+                                                  'сожалению ты отправил неправильную ссылку.\n'
+                                                  'Пожалуйста, попробуй заново', keyboard_main)
+
+            except IndexError:
+                self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
+                               keyboard_main)
+
+    def check_age(self, event, keyboard_main, values_dict):
+        self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, в течение 30 '
+                                      'секунд укажи свой возраст цифрами и немного подожди.')
+        last_message_id = self.group.get_message_id()
+        time.sleep(30)
+        try:
+            self.group.get_message_by_id(last_message_id + 1)
+            age = self.group.get_message()
+            if not age.isdigit():
+                self.write_msg(event.user_id, 'Сожалею, но ты ввёл не число :(\n'
+                                              'Начни заново.', keyboard_main)
+            elif age < 18:
+                self.write_msg(event.user_id, 'Ты ещё слишком молод для того, чтобы искать '
+                                              'себе пару.\nВозвращайся когда повзрослеешь :(')
+            else:
+                values_dict['age'] = int(self.group.get_message())
+        except IndexError:
+            self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
+                           keyboard_main)
+
+    def check_sex(self, event, keyboard_sex, keyboard_main, values_dict):
+        self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, в течение '
+                                      '30 секунд кнопкой выбери свой пол и немного '
+                                      'подожди', keyboard_sex)
+        last_message_id = self.group.get_message_id()
+        time.sleep(30)
+        try:
+            self.group.get_message_by_id(last_message_id + 1)
+            sex = self.group.get_message().lower()
+            if sex == 'женский':
+                values_dict['sex'] = 1
+            elif sex == 'мужской':
+                values_dict['sex'] = 2
+            else:
+                self.write_msg(event.user_id, 'Я же сказал, выбери кнопкой, а не пиши сам!\n'
+                                              'Теперь придётся начать заново :(', keyboard_main)
+        except IndexError:
+            self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
+                           keyboard_main)
+
+    def check_city(self, event, values_dict, keyboard_main):
+        self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, в течение 30 '
+                                      'секунд отправь название своего российского города на '
+                                      'русском языке и немного подожди.')
+        last_message_id = self.group.get_message_id()
+        time.sleep(30)
+        try:
+            self.group.get_message_by_id(last_message_id + 1)
+            city_name = self.group.get_message().lower().capitalize()
+            values_dict['city_name'] = city_name
+            values_dict['city_id'] = None
+
+        except IndexError:
+            self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
+                           keyboard_main)
 
     def dialog(self):
         for event in self.longpoll.listen():
@@ -52,7 +149,7 @@ class VkBotApi:
 
                     while True:
                         if request == 'vkinder':
-                            users_offset += 1
+                            users_offset += 3
                             values_dict = {}
                             photos_dict = {}
                             photos_dict_sorted = {}
@@ -63,71 +160,10 @@ class VkBotApi:
                             fields_values = self.group.get_user_data(event.user_id)
                             values_dict['vk_id'] = event.user_id
 
-                            if not self.vk_db_user.check_exist_vk_token(values_dict['vk_id']) and int(
-                                    datetime.now().timestamp()) < int(self.vk_db_user.get_token_lifetime_from_db(
-                                    values_dict['vk_id'])):
-                                self.user.__init__(self.vk_db_user.get_user_token_from_db(values_dict['vk_id']))
-
-                            else:
-                                dotenv_path = os.path.join('.env')
-                                if os.path.exists(dotenv_path):
-                                    load_dotenv(dotenv_path)
-                                get_user_token_url = os.getenv('USER_TOKEN_URL')
-                                self.write_msg(event.user_id, 'Привет! Я бот для поиска твоей идеальной второй '
-                                                              f'половинки\n{self.group.get_username(event.user_id)}, '
-                                                              'для моей работы нужно перейти по ссылке:\n'
-                                                              f'{get_user_token_url}\n'
-                                                              'Затем нужно разрешить доступ к аккаунту и отправить '
-                                                              'мне ссылку из браузера в течение 30 секунд')
-                                last_message = self.group.get_message_id()
-
-                                time.sleep(30)
-
-                                try:
-                                    self.group.get_message_by_id(last_message + 1)
-                                    user_token_url = self.group.get_message()
-                                    pattern = r'(access_token=)(\w*)(&expires_in)'
-                                    try:
-                                        token_lifetime = int(datetime.now().timestamp()) + 86370
-                                        user_token = (re.search(pattern, user_token_url, re.M | re.I)).group(2)
-                                        self.vk_db_user.add_vk_user_token_to_db(values_dict['vk_id'], user_token,
-                                                                                token_lifetime)
-                                        self.user.__init__(self.vk_db_user.get_user_token_from_db(values_dict['vk_id']))
-                                        break
-
-                                    except AttributeError:
-                                        self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, к '
-                                                                      'сожалению ты отправил неправильную ссылку.\n'
-                                                                      'Пожалуйста, попробуй заново', keyboard_main)
-                                        break
-
-                                except IndexError:
-                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
-                                                   keyboard_main)
-                                    break
+                            self.get_token(values_dict, event, keyboard_main)
 
                             if fields_values[0] == '':
-                                self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, в течение 30 '
-                                                              'секунд укажи свой возраст цифрами и немного подожди.')
-                                last_message_id = self.group.get_message_id()
-                                time.sleep(30)
-                                try:
-                                    self.group.get_message_by_id(last_message_id + 1)
-                                    age = self.group.get_message()
-                                    if not age.isdigit():
-                                        self.write_msg(event.user_id, 'Сожалею, но ты ввёл не число :(\n'
-                                                                      'Начни заново.', keyboard_main)
-                                        break
-                                    elif age < 18:
-                                        self.write_msg(event.user_id, 'Ты ещё слишком молод для того, чтобы искать '
-                                                                      'себе пару.\nВозвращайся когда повзрослеешь :(')
-                                        break
-                                    else:
-                                        values_dict['age'] = int(self.group.get_message())
-                                except IndexError:
-                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
-                                                   keyboard_main)
-                                    break
+                                self.check_age(event, keyboard_main, values_dict)
                             else:
                                 year_now = datetime.now().year
                                 year_birthday = int(fields_values[0][-4:])
@@ -140,51 +176,12 @@ class VkBotApi:
                                     values_dict['age'] = age
 
                             if fields_values[1] == '':
-                                self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, в течение '
-                                                              '30 секунд кнопкой выбери свой пол и немного '
-                                                              'подожди', keyboard_sex)
-                                last_message_id = self.group.get_message_id()
-                                time.sleep(30)
-                                try:
-                                    self.group.get_message_by_id(last_message_id + 1)
-                                    sex = self.group.get_message().lower()
-                                    if sex == 'женский':
-                                        values_dict['sex'] = 1
-                                    elif sex == 'мужской':
-                                        values_dict['sex'] = 2
-                                    else:
-                                        self.write_msg(event.user_id, 'Я же сказал, выбери кнопкой, а не пиши сам!\n'
-                                                                      'Теперь придётся начать заново :(', keyboard_main)
-                                        break
-                                except IndexError:
-                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
-                                                   keyboard_main)
-                                    break
+                                self.check_sex(event, keyboard_sex, keyboard_main, values_dict)
                             else:
                                 values_dict['sex'] = int((eval(fields_values[1])))
 
                             if fields_values[2] == '':
-                                self.write_msg(event.user_id, f'{self.group.get_username(event.user_id)}, в течение 30 '
-                                                              'секунд отправь название своего российского города на '
-                                                              'русском языке и немного подожди.')
-                                last_message_id = self.group.get_message_id()
-                                time.sleep(30)
-                                try:
-                                    self.group.get_message_by_id(last_message_id + 1)
-                                    city_name = self.group.get_message().lower().capitalize()
-                                    try:
-                                        values_dict['city_name'] = city_name
-                                        values_dict['city_id'] = None
-
-                                    except KeyError:
-                                        self.write_msg(event.user_id, 'Сожалею, но такого города нет :(\nПопробуй '
-                                                                      'указать его в своём профиле VK и напиши мне ещё '
-                                                                      'раз', keyboard_main)
-
-                                except IndexError:
-                                    self.write_msg(event.user_id, 'Сожалею, но ты не успел :(\nНачни заново.',
-                                                   keyboard_main)
-                                    break
+                                self.check_city(event, values_dict, keyboard_main)
                             else:
                                 values_dict['city_name'] = str((eval(fields_values[2])['title']))
                                 values_dict['city_id'] = int((eval(fields_values[2])['id']))
@@ -207,7 +204,7 @@ class VkBotApi:
                                                                     values_dict['city_name'],
                                                                     values_dict['city_id'])
 
-                            if self.vk_db_user.check_exist_city_id(values_dict['vk_id']):
+                            if not self.vk_db_user.check_exist_city_id(values_dict['vk_id']):
                                 city_type = 'hometown'
                                 city = values_dict['city_name']
                             else:
@@ -233,8 +230,8 @@ class VkBotApi:
                                                                            values_dict['age'] - 2, values_dict['age']
                                                                            + 2, users_offset)
                                         for item_next in vk_user_next["items"]:
-                                            if not self.vk_db_user.check_exist_find_user(values_dict['vk_id'],
-                                                                                         item_next['id']):
+                                            if self.vk_db_user.check_exist_find_user(values_dict['vk_id'],
+                                                                                     item_next['id']):
                                                 is_closed_next = True
                                             else:
                                                 if item_next['is_closed']:
@@ -260,8 +257,8 @@ class VkBotApi:
                                                                            + 2, users_offset)
                                         users_offset += 1
                                         for item_next in vk_user_next["items"]:
-                                            if not self.vk_db_user.check_exist_find_user(values_dict['vk_id'],
-                                                                                         item_next['id']):
+                                            if self.vk_db_user.check_exist_find_user(values_dict['vk_id'],
+                                                                                     item_next['id']):
                                                 is_closed_next_repeat = False
                                             else:
                                                 if item_next['is_closed']:
